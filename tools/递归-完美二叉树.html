@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>递归函数全景解析</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --bg-color: #f8fafc;
+            --code-bg: #1e293b;
+            --primary: #3b82f6;
+            --success: #22c55e;
+            --warning: #f59e0b;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* 滚动条美化 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* 代码高亮系统 */
+        .code-container {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            background-color: var(--code-bg);
+            color: #e2e8f0;
+            overflow-y: auto;
+            line-height: 1.6;
+        }
+        
+        .code-line {
+            border-left: 3px solid transparent;
+            transition: all 0.2s;
+            padding: 0 8px;
+        }
+        
+        .code-line.active {
+            background: rgba(255, 255, 255, 0.15);
+            border-left-color: var(--warning);
+            color: #fff;
+        }
+
+        .kwd { color: #c678dd; } 
+        .func { color: #61dafb; } 
+        .arg { color: #d19a66; }  
+        .num { color: #e06c75; }  
+        .cmt { color: #7f848e; font-style: italic; }
+
+        /* 栈帧动画 */
+        .stack-frame {
+            animation: slideInStack 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1) forwards;
+            transform-origin: top center;
+        }
+
+        @keyframes slideInStack {
+            from { opacity: 0; transform: translateY(-15px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .stack-frame.returning {
+            border-left-color: var(--success) !important;
+            background-color: #f0fdf4 !important;
+            box-shadow: 0 0 15px rgba(34, 197, 94, 0.2);
+            transform: scale(1.02);
+            transition: all 0.3s;
+        }
+
+        .stack-frame.popping {
+            animation: popOut 0.3s forwards;
+        }
+
+        @keyframes popOut {
+            to { opacity: 0; transform: translateX(20px) scale(0.9); height: 0; margin: 0; padding: 0; }
+        }
+
+        /* --- 树形视图 CSS --- */
+        .tree-node-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0 2px;
+            position: relative;
+        }
+
+        .tree-node {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: white;
+            border: 2px solid #cbd5e1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: bold;
+            color: #475569;
+            z-index: 10;
+            transition: all 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            position: relative;
+        }
+
+        .tree-node.active-node {
+            border-color: var(--primary);
+            background-color: #eff6ff;
+            color: var(--primary);
+            transform: scale(1.1);
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+        }
+
+        .tree-node.waiting {
+            border-color: var(--warning);
+            background-color: #fffbeb;
+            color: #d97706;
+        }
+
+        .tree-node.returned {
+            border-color: var(--success);
+            background-color: #f0fdf4;
+            color: var(--success);
+        }
+        
+        .tree-node.leaf {
+            background-color: #f1f5f9;
+            border-style: dashed;
+        }
+
+        .tree-children {
+            display: flex;
+            flex-direction: row;
+            justify-content: center;
+            margin-top: 16px;
+            position: relative;
+        }
+
+        /* 连接线绘制 */
+        .tree-connector-down {
+            position: absolute;
+            top: 36px; 
+            left: 50%;
+            width: 2px;
+            height: 16px; 
+            background-color: #cbd5e1;
+            transform: translateX(-50%);
+            z-index: 0;
+        }
+
+        /* 标签页样式 */
+        .mode-btn {
+            position: relative;
+            transition: all 0.2s;
+        }
+        .mode-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: var(--primary);
+        }
+        .mode-btn.active { color: var(--primary); font-weight: 600; }
+        .mode-btn.disabled { opacity: 0.3; cursor: not-allowed; }
+
+        /* 优化模式变量卡片 */
+        .opt-var-card { transition: all 0.5s; }
+        .flash-update { animation: flashHighlight 0.6s ease-out; }
+        @keyframes flashHighlight {
+            0% { background-color: #fde047; transform: scale(1.1); }
+            100% { background-color: #f8fafc; transform: scale(1); }
+        }
+        .var-highlight {
+            background-color: #fffbeb;
+            border: 1px solid #fcd34d;
+            border-radius: 2px;
+            padding: 0 2px;
+            transition: background-color 0.5s;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 顶部 Banner -->
+    <div class="bg-gradient-to-r from-orange-500 to-red-600 text-white py-3 px-6 shadow-md flex items-center justify-between z-30 relative shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="bg-white/20 p-2 rounded-lg backdrop-blur-sm shadow-sm">
+                <span class="text-2xl drop-shadow-md">🌀</span>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg tracking-wide text-white drop-shadow-sm">Python 算法交互式课堂</h1>
+                <p class="text-xs text-orange-100 font-medium">递归函数深度解析 & 可视化演示</p>
+            </div>
+        </div>
+        <div class="hidden md:block text-sm text-orange-50 italic font-mono opacity-90">
+            "To understand recursion, you must first understand recursion."
+        </div>
+    </div>
+
+    <!-- 顶部控制栏 -->
+    <header class="bg-white border-b border-gray-200 px-6 py-3 flex flex-col md:flex-row justify-between items-center gap-4 z-20 shadow-sm shrink-0">
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+                <span class="text-gray-500 text-sm font-bold uppercase tracking-wider">算法:</span>
+                <select id="algoSelect" onchange="changeAlgo()" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-48 p-2 cursor-pointer">
+                    <option value="factorial">阶乘 (Factorial)</option>
+                    <option value="sum">累加求和 (Sum)</option>
+                    <option value="fibonacci">斐波那契 (Fibonacci)</option>
+                    <option value="binary_tree">完美二叉树 (Binary Tree)</option>
+                </select>
+            </div>
+            
+            <div class="h-6 w-px bg-gray-300 mx-2"></div>
+
+            <div class="flex gap-1 bg-gray-100 p-1 rounded-lg" id="mode-tabs-container">
+                <button onclick="setMode('standard')" class="mode-btn px-3 py-1.5 rounded-md text-sm text-gray-600 hover:bg-white" id="tab-standard">1. 普通递归</button>
+                <button onclick="setMode('tail-opt')" class="mode-btn px-3 py-1.5 rounded-md text-sm text-gray-600 hover:bg-white" id="tab-tail-opt">2. 尾递归优化</button>
+                <button onclick="setMode('tail-python')" class="mode-btn px-3 py-1.5 rounded-md text-sm text-gray-600 hover:bg-white" id="tab-tail-python">3. Python实况</button>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <div class="flex items-center bg-white border border-gray-300 rounded-md px-3 py-1 shadow-sm">
+                <span class="text-gray-500 mr-2 font-mono font-bold">n =</span>
+                <input type="number" id="numInput" value="3" min="1" max="20" class="w-12 outline-none text-center font-bold text-gray-700">
+            </div>
+            
+            <button onclick="start()" id="btnStart" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors shadow-md active:scale-95">开始</button>
+            
+            <button onclick="toggleAutoPlay()" id="btnAuto" class="hidden bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-md flex items-center gap-2 active:scale-95 min-w-[100px] justify-center">
+                ▶ 自动
+            </button>
+
+            <button onclick="next()" id="btnNext" class="hidden bg-amber-500 hover:bg-amber-600 text-white px-6 py-2 rounded-lg font-medium transition-colors shadow-md flex items-center gap-2 active:scale-95">
+                下一步
+            </button>
+            
+            <button onclick="reset()" id="btnReset" class="hidden bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-md active:scale-95">重置</button>
+        </div>
+    </header>
+
+    <!-- 主体 -->
+    <div class="flex flex-1 overflow-hidden relative">
+        
+        <!-- 左侧面板：代码与解释 -->
+        <div class="w-5/12 flex flex-col border-r border-gray-200 bg-white">
+            <!-- 解释区 -->
+            <div class="p-5 border-b border-gray-100 bg-blue-50 min-h-[120px] transition-colors duration-500" id="msg-box">
+                <h3 class="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                    <span id="msg-icon">💡</span> 
+                    <span id="msg-title">准备就绪</span>
+                </h3>
+                <p id="msg-text" class="text-gray-600 text-sm leading-relaxed">
+                    请选择算法和模式，然后点击“开始”。<br>
+                    建议先从较小的 N 值开始观察。
+                </p>
+            </div>
+
+            <!-- 代码区 -->
+            <div class="flex-1 relative flex flex-col">
+                <div class="px-4 py-2 bg-gray-800 text-gray-400 text-xs uppercase font-bold tracking-wider flex justify-between">
+                    <span>Source Code</span>
+                    <span id="lang-label">Python 3.10</span>
+                </div>
+                <div id="codeView" class="code-container flex-1 p-4 text-sm"></div>
+            </div>
+            
+            <!-- 状态脚标 -->
+            <div class="bg-gray-50 px-4 py-2 text-xs text-gray-400 flex justify-between border-t border-gray-200">
+                <span id="step-counter">Steps: 0</span>
+                <div class="flex gap-4">
+                    <span id="auto-status" class="hidden text-purple-500 font-bold animate-pulse">● Auto Playing</span>
+                    <span id="status-indicator">Idle</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧面板：可视化 (分割为 Tree, Stack 和 Canvas) -->
+        <div class="w-7/12 bg-slate-100 flex flex-col relative overflow-hidden">
+            
+            <!-- 1. 递归树视图 (Fibonacci用) -->
+            <div id="treePanel" class="hidden h-3/5 border-b border-gray-300 relative bg-white flex flex-col transition-all duration-300">
+                <div class="absolute top-2 left-3 z-20 bg-white/80 px-2 py-1 rounded backdrop-blur-sm border border-gray-100">
+                    <h2 class="text-xs font-bold text-slate-500 tracking-tight flex items-center gap-2">
+                        RECURSION TREE 
+                        <span class="text-[10px] font-normal text-slate-400 bg-slate-100 px-1.5 rounded">Live Structure</span>
+                    </h2>
+                </div>
+                <div id="treeWrapper" class="flex-1 overflow-auto p-8 flex justify-center items-start scroll-smooth">
+                    <div id="treeRoot" class="flex flex-col items-center min-w-max">
+                        <div class="text-slate-300 text-sm mt-10 italic select-none">
+                            树形结构将在此生长...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Turtle Canvas 视图 (二叉树用) -->
+            <div id="canvasPanel" class="hidden h-full relative bg-white flex flex-col items-center justify-center">
+                <div class="absolute top-2 left-3 z-20 bg-white/80 px-2 py-1 rounded backdrop-blur-sm border border-gray-100">
+                    <h2 class="text-xs font-bold text-slate-500 tracking-tight flex items-center gap-2">
+                        TURTLE GRAPHICS
+                        <span class="text-[10px] font-normal text-slate-400 bg-slate-100 px-1.5 rounded">Canvas</span>
+                    </h2>
+                </div>
+                <canvas id="turtleCanvas" width="600" height="500" class="bg-white shadow-sm border border-gray-200 rounded-lg"></canvas>
+                <div class="absolute bottom-4 text-xs text-slate-400 italic">海龟正在绘图...</div>
+            </div>
+
+            <!-- 3. 栈视图 (Stack View) -->
+            <div id="stackPanel" class="h-full relative flex flex-col bg-slate-50 transition-all duration-300">
+                 <div class="absolute top-2 left-3 z-20 flex justify-between w-full pr-6 pointer-events-none">
+                    <h2 class="text-xs font-bold text-slate-500 tracking-tight bg-slate-50/80 px-2 py-1 rounded">CALL STACK</h2>
+                    <div id="stack-stats" class="text-[10px] bg-white px-2 py-1 rounded shadow-sm text-slate-400 font-mono border border-gray-100">
+                        Depth: 0
+                    </div>
+                </div>
+                <div id="stackView" class="flex-1 flex flex-col-reverse items-center gap-2 overflow-y-auto pb-8 pt-8 w-full px-4 scroll-smooth">
+                    <div class="text-slate-300 text-sm mt-4 italic select-none">
+                        Stack Frames...
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- 版权 Footer -->
+    <footer class="bg-slate-900 border-t border-slate-800 py-4 text-center z-30 shrink-0 shadow-[inset_0_4px_6px_-1px_rgba(0,0,0,0.1)]">
+        <div class="flex flex-col items-center justify-center gap-1">
+            <p class="text-sm text-slate-300 font-medium tracking-wide">
+                Copyright © 2025 <span class="text-orange-500 font-bold hover:text-orange-400 transition-colors cursor-pointer">moxiaonuo</span>
+            </p>
+            <p class="text-[10px] text-slate-500 uppercase tracking-widest">All Rights Reserved</p>
+        </div>
+    </footer>
+
+<script>
+    // --- 算法配置 ---
+    const ALGORITHMS = {
+        factorial: {
+            name: '阶乘 (Factorial)',
+            intro: '想象大家<b>排队报数</b>。你想知道自己是第几排，就问前一个人“你是第几排？”，前一个人再问前面的人... 直到第一排回答“我是第1排”。答案一个个传回来，你加1就知道自己是第几排了。这就是<b>递</b>（问过去）和<b>归</b>（答回来）。',
+            standardCode: [
+                { t: "# 普通递归", c: "cmt" },
+                { t: "def fact(n):", i: 0, k: 'def', f: 'fact', a: 'n' },
+                { t: "if n == 1:", i: 1, k: 'if' },
+                { t: "return 1", i: 2, k: 'return' },
+                { t: "res = fact(n - 1)", i: 1, k: 'res' },
+                { t: "return n * res", i: 1, k: 'return' }
+            ],
+            tailCode: [
+                { t: "# 尾递归：参数携带状态", c: "cmt" },
+                { t: "def fact_iter(n, acc=1):", i: 0, k: 'def', f: 'fact_iter', a: 'n, acc' },
+                { t: "if n == 1:", i: 1, k: 'if' },
+                { t: "return acc", i: 2, k: 'return' },
+                { t: "# 为什么这样传参？核心逻辑：", c: "cmt", i: 1 },
+                { t: "# n - 1 : 倒数！任务还没结束，继续处理下一个数", c: "cmt", i: 1 },
+                { t: "# n * acc : 就像接力棒，把算好的乘积直接传给下一个人", c: "cmt", i: 1 },
+                { t: "return fact_iter(n - 1, n * acc)", i: 1, k: 'return' }
+            ]
+        },
+        sum: {
+            name: '累加求和 (Sum)',
+            intro: '就像<b>叠积木</b>。想知道5个积木有多高？等于“第5个积木的高度”加上“下面4个积木的总高度”。为了算下面4个，又要算下面3个... 直到最底下的第1个积木。',
+            standardCode: [
+                { t: "# 普通递归", c: "cmt" },
+                { t: "def sum_n(n):", i: 0, k: 'def', f: 'sum_n', a: 'n' },
+                { t: "if n == 1:", i: 1, k: 'if' },
+                { t: "return 1", i: 2, k: 'return' },
+                { t: "res = sum_n(n - 1)", i: 1, k: 'res' },
+                { t: "return n + res", i: 1, k: 'return' }
+            ],
+            tailCode: [
+                { t: "# 尾递归：累积值传参", c: "cmt" },
+                { t: "def sum_iter(n, acc=0):", i: 0, k: 'def', f: 'sum_iter', a: 'n, acc' },
+                { t: "if n == 0:", i: 1, k: 'if' },
+                { t: "return acc", i: 2, k: 'return' },
+                { t: "# 为什么这样传参？核心逻辑：", c: "cmt", i: 1 },
+                { t: "# n - 1   : 还没加完，继续拿下一个积木", c: "cmt", i: 1 },
+                { t: "# n + acc : 把当前的积木加到手里，带着总高度去下一层", c: "cmt", i: 1 },
+                { t: "return sum_iter(n - 1, n + acc)", i: 1, k: 'return' }
+            ]
+        },
+        fibonacci: {
+            name: '斐波那契 (Fibonacci)',
+            intro: '就像<b>兔子生兔子</b>。每个数都是前两个数加起来。比如想知道第5个月有多少兔子，必须先知道第4个月和第3个月的数量。这会导致任务<b>一分二，二分四</b>，计算量像滚雪球一样变大。',
+            standardCode: [
+                { t: "# 普通递归 (树形)", c: "cmt" },
+                { t: "def fib(n):", i: 0, k: 'def', f: 'fib', a: 'n' },
+                { t: "if n <= 2:", i: 1, k: 'if' },
+                { t: "return 1", i: 2, k: 'return' },
+                { t: "a = fib(n - 1)", i: 1, k: 'a' },
+                { t: "b = fib(n - 2)", i: 1, k: 'b' },
+                { t: "return a + b", i: 1, k: 'return' }
+            ],
+            tailCode: [
+                { t: "# 尾递归 (迭代模式)", c: "cmt" },
+                { t: "def fib_iter(n, a=1, b=1):", i: 0, k: 'def', f: 'fib_iter', a: 'n, a, b' },
+                { t: "if n <= 2:", i: 1, k: 'if' },
+                { t: "return b", i: 2, k: 'return' },
+                { t: "# 为什么这样传参？核心逻辑（滚动更新）：", c: "cmt", i: 1 },
+                { t: "# n - 1 : 时间向前推进一步", c: "cmt", i: 1 },
+                { t: "# b     : “明天”变成“今天” (旧的b 变成 新的a)", c: "cmt", i: 1 },
+                { t: "# a + b : “后天”是“今天”+“明天” (计算出新的b)", c: "cmt", i: 1 },
+                { t: "return fib_iter(n - 1, b, a + b)", i: 1, k: 'return' }
+            ]
+        },
+        binary_tree: {
+            name: '完美二叉树 (Turtle)',
+            intro: '使用 Python 的 <b>turtle</b> 库来画树。这是一棵“分形树”：主干长出来，分叉成左右两根树枝；每根树枝再分叉……<br>重点观察代码中的 <b>backward</b>，它负责把海龟“送回”分叉点，这是递归回溯的直观体现。',
+            standardCode: [
+                { t: "import turtle", c: "cmt" },
+                { t: "def draw_tree(length):", i: 0, k: 'def', f: 'draw_tree', a: 'length' },
+                { t: "if length < 5:", i: 1, k: 'if' },
+                { t: "return", i: 2, k: 'return' },
+                { t: "# 1. 画主干", c: "cmt", i: 1 },
+                { t: "turtle.forward(length)", i: 1, k: 'forward' },
+                { t: "# 2. 画左边树枝 (递归)", c: "cmt", i: 1 },
+                { t: "turtle.left(30)", i: 1, k: 'left' },
+                { t: "draw_tree(length - 15)", i: 1, k: 'draw_tree' },
+                { t: "# 3. 画右边树枝 (递归)", c: "cmt", i: 1 },
+                { t: "turtle.right(60)", i: 1, k: 'right' },
+                { t: "draw_tree(length - 15)", i: 1, k: 'draw_tree' },
+                { t: "# 4. 返回分叉点 (回溯)", c: "cmt", i: 1 },
+                { t: "turtle.left(30)  # 转回来", i: 1, k: 'left' },
+                { t: "turtle.backward(length)", i: 1, k: 'backward' }
+            ],
+            tailCode: [] // Not used for this mode
+        }
+    };
+
+    // --- 全局状态 ---
+    let state = {
+        algo: 'factorial',
+        mode: 'standard', // standard, tail-opt, tail-python
+        n: 3,
+        steps: [],
+        stepIndex: 0,
+        running: false,
+        autoPlaying: false,
+        timerId: null,
+        turtleCtx: null, // Canvas context
+        turtleState: { x: 0, y: 0, angle: -90 } // Turtle state
+    };
+
+    // --- 初始化 ---
+    document.addEventListener('DOMContentLoaded', () => {
+        setMode('standard');
+        
+        // Init Canvas Context
+        const canvas = document.getElementById('turtleCanvas');
+        if (canvas) state.turtleCtx = canvas.getContext('2d');
+
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && state.running && !state.autoPlaying && !document.getElementById('btnNext').disabled) {
+                e.preventDefault();
+                next();
+            }
+        });
+        
+        updateLayout(); 
+    });
+
+    // --- 自动播放控制 ---
+    function toggleAutoPlay() {
+        if(state.autoPlaying) stopAutoPlay();
+        else startAutoPlay();
+    }
+
+    function startAutoPlay() {
+        if(state.stepIndex >= state.steps.length) return;
+        
+        state.autoPlaying = true;
+        const btn = document.getElementById('btnAuto');
+        btn.innerHTML = '⏸ 暂停';
+        btn.classList.replace('bg-purple-500', 'bg-pink-500');
+        btn.classList.replace('hover:bg-purple-600', 'hover:bg-pink-600');
+        
+        document.getElementById('auto-status').classList.remove('hidden');
+        document.getElementById('btnNext').disabled = true;
+        document.getElementById('btnNext').classList.add('opacity-50');
+
+        next();
+        
+        // Turtle draws faster
+        const interval = state.algo === 'binary_tree' ? 200 : 1200;
+        
+        state.timerId = setInterval(() => {
+            if(!state.running || state.stepIndex >= state.steps.length) stopAutoPlay();
+            else next();
+        }, interval);
+    }
+
+    function stopAutoPlay() {
+        state.autoPlaying = false;
+        clearInterval(state.timerId);
+        state.timerId = null;
+        
+        const btn = document.getElementById('btnAuto');
+        if(btn) {
+            btn.innerHTML = '▶ 自动';
+            btn.classList.replace('bg-pink-500', 'bg-purple-500');
+            btn.classList.replace('hover:bg-pink-600', 'hover:bg-purple-600');
+        }
+        
+        document.getElementById('auto-status').classList.add('hidden');
+        
+        if(state.running && state.stepIndex < state.steps.length) {
+            document.getElementById('btnNext').disabled = false;
+            document.getElementById('btnNext').classList.remove('opacity-50');
+        }
+    }
+
+    // --- 控制逻辑 ---
+
+    function changeAlgo() {
+        if(state.running) softReset();
+        state.algo = document.getElementById('algoSelect').value;
+        const nInput = document.getElementById('numInput');
+        
+        if(state.algo === 'fibonacci') {
+            nInput.value = 3; nInput.max = 5; 
+        } else if (state.algo === 'binary_tree') {
+            nInput.value = 60; nInput.max = 100; // Use input as Length for Turtle
+            document.getElementById('numInput').previousElementSibling.innerText = "len=";
+        } else {
+            nInput.value = 5; nInput.max = 12;
+            document.getElementById('numInput').previousElementSibling.innerText = "n=";
+        }
+        
+        // Force Standard mode for Binary Tree
+        if(state.algo === 'binary_tree') {
+            setMode('standard');
+        }
+
+        renderCode();
+        updateUIInfo();
+        updateLayout();
+    }
+
+    function setMode(mode) {
+        if(state.running) softReset();
+        state.mode = mode;
+        
+        document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById(`tab-${mode}`).classList.add('active');
+        
+        const msgBox = document.getElementById('msg-box');
+        msgBox.className = msgBox.className.replace(/bg-\w+-50/, mode === 'tail-python' ? 'bg-amber-50' : (mode === 'tail-opt' ? 'bg-purple-50' : 'bg-blue-50'));
+
+        renderCode();
+        updateUIInfo();
+        updateLayout();
+    }
+    
+    function updateLayout() {
+        const treePanel = document.getElementById('treePanel');
+        const stackPanel = document.getElementById('stackPanel');
+        const canvasPanel = document.getElementById('canvasPanel');
+        const modeTabs = document.getElementById('mode-tabs-container');
+
+        // Reset visibility
+        treePanel.classList.add('hidden');
+        stackPanel.classList.add('hidden');
+        canvasPanel.classList.add('hidden');
+        stackPanel.classList.remove('h-2/5', 'h-full');
+        modeTabs.style.visibility = 'visible';
+
+        if (state.algo === 'binary_tree') {
+            // Turtle Mode: Show Canvas Only, Hide Mode Tabs
+            canvasPanel.classList.remove('hidden');
+            modeTabs.style.visibility = 'hidden';
+        } 
+        else if (state.algo === 'fibonacci') {
+            treePanel.classList.remove('hidden');
+            stackPanel.classList.remove('hidden');
+            stackPanel.classList.add('h-2/5');
+        } 
+        else {
+            stackPanel.classList.remove('hidden');
+            stackPanel.classList.add('h-full');
+        }
+    }
+
+    function updateUIInfo() {
+        const title = document.getElementById('msg-title');
+        const text = document.getElementById('msg-text');
+        const algo = ALGORITHMS[state.algo];
+
+        if (state.algo === 'binary_tree') {
+             title.innerHTML = `${algo.name}`;
+             text.innerHTML = `${algo.intro}`;
+             return;
+        }
+
+        if (state.mode === 'standard') {
+            title.innerHTML = `${algo.name} - 普通递归`;
+            text.innerHTML = `${algo.intro}`;
+        } else if (state.mode === 'tail-opt') {
+            title.innerHTML = `${algo.name} - 尾递归优化`;
+            text.innerHTML = `为了解决栈溢出，编译器发现最后一步是调用自身，直接<b>复用当前栈帧</b>。树形结构退化为简单的循环迭代（类似 while 循环）。`;
+        } else {
+            title.innerHTML = `${algo.name} - Python 环境`;
+            text.innerHTML = `虽然代码写成了尾递归，但 Python 解释器<b>不支持优化</b>。栈依然会一层层叠加，和普通递归一样，只是参数传递方式变了。`;
+        }
+    }
+
+    function renderCode() {
+        const container = document.getElementById('codeView');
+        container.innerHTML = '';
+        
+        // If binary_tree, always use standardCode (turtle code)
+        let codeLines;
+        if(state.algo === 'binary_tree') {
+            codeLines = ALGORITHMS['binary_tree'].standardCode;
+        } else {
+            codeLines = (state.mode === 'standard') 
+                ? ALGORITHMS[state.algo].standardCode 
+                : ALGORITHMS[state.algo].tailCode;
+        }
+
+        codeLines.forEach((line, idx) => {
+            const div = document.createElement('div');
+            div.className = 'code-line whitespace-pre';
+            div.id = `line-${idx}`;
+            
+            if (line.c === 'cmt') {
+                div.innerHTML = `<span class="cmt">${line.t}</span>`;
+            } else {
+                let html = line.t;
+                if(line.k) html = html.replace(line.k, `<span class="kwd">${line.k}</span>`);
+                if(line.f) html = html.replace(line.f, `<span class="func">${line.f}</span>`);
+                if(line.a) {
+                    line.a.split(', ').forEach(arg => {
+                        html = html.replace(new RegExp(`\\b${arg}\\b`, 'g'), `<span class="arg">${arg}</span>`);
+                    });
+                }
+                div.innerHTML = '&nbsp;&nbsp;&nbsp;&nbsp;'.repeat(line.i) + html;
+            }
+            container.appendChild(div);
+        });
+    }
+
+    // --- 运行与步骤生成 ---
+
+    function start() {
+        const n = parseInt(document.getElementById('numInput').value);
+        if(isNaN(n) || n < 1) { alert("请输入有效数字"); return; }
+        
+        const isTreeLike = (state.algo === 'fibonacci');
+        if(isTreeLike && state.mode === 'standard' && n > 6) {
+            if(!confirm(`层级为 ${n} 的递归树非常庞大，确定要继续吗？`)) return;
+        }
+
+        if(state.running) softReset();
+
+        state.n = n;
+        state.running = true;
+        state.stepIndex = 0;
+        
+        // Generate Steps
+        if(state.algo === 'binary_tree') {
+            // Reset Canvas State
+            const canvas = document.getElementById('turtleCanvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Initial Turtle Position (Bottom Center)
+            state.turtleState = { x: canvas.width/2, y: canvas.height - 20, angle: -90 }; // Pointing Up
+            
+            // Draw initial Turtle
+            drawTurtleCursor(ctx, state.turtleState);
+            
+            state.steps = generateTurtleSteps(n);
+        } else {
+            state.steps = generateSteps(state.algo, state.mode, n);
+        }
+
+        document.getElementById('btnStart').classList.add('hidden');
+        document.getElementById('btnNext').classList.remove('hidden');
+        document.getElementById('btnAuto').classList.remove('hidden');
+        document.getElementById('btnReset').classList.remove('hidden');
+        document.getElementById('numInput').disabled = true;
+        document.getElementById('algoSelect').disabled = true;
+        
+        // Clear other views
+        document.getElementById('stackView').innerHTML = '';
+        document.getElementById('treeRoot').innerHTML = ''; 
+        
+        const btnNext = document.getElementById('btnNext');
+        btnNext.disabled = false;
+        btnNext.classList.remove('opacity-50', 'cursor-not-allowed');
+
+        document.getElementById('msg-title').innerText = "演示运行中...";
+        
+        next();
+    }
+
+    function next() {
+        try {
+            if (state.stepIndex >= state.steps.length) {
+                document.getElementById('msg-text').innerHTML = "<strong>✅ 演示结束</strong>";
+                stopAutoPlay();
+                document.getElementById('btnNext').disabled = true;
+                document.getElementById('btnNext').classList.add('opacity-50', 'cursor-not-allowed');
+                document.getElementById('btnAuto').classList.add('hidden');
+                return;
+            }
+
+            const s = state.steps[state.stepIndex];
+            
+            document.querySelectorAll('.code-line').forEach(el => el.classList.remove('active'));
+            const lineEl = document.getElementById(`line-${s.line}`);
+            if(lineEl) lineEl.scrollIntoView({block: "center", behavior: "smooth"});
+            if(lineEl) lineEl.classList.add('active');
+
+            document.getElementById('msg-text').innerHTML = s.msg;
+            document.getElementById('step-counter').innerText = `Step: ${state.stepIndex + 1}`;
+
+            // Dispatch Render
+            if (state.algo === 'binary_tree') {
+                renderTurtleMode(s);
+            } else if (state.mode === 'tail-opt') {
+                renderOptMode(s);
+            } else {
+                renderStackMode(s);
+                if (state.algo === 'fibonacci') renderTreeMode(s);
+            }
+
+            updateStats();
+            state.stepIndex++;
+        } catch (e) {
+            console.error("Next Step Error:", e);
+            document.getElementById('msg-text').innerHTML = "<strong class='text-red-500'>⚠️ 发生渲染错误，请点击重置。</strong>";
+            stopAutoPlay();
+        }
+    }
+
+    // --- Turtle 核心逻辑 ---
+    
+    function generateTurtleSteps(length) {
+        let steps = [];
+        
+        // Recursive simulator for turtle
+        // Need to simulate geometry to know drawing paths
+        // We assume turtle starts at some state. Step contains delta or absolute action.
+        
+        const simDraw = (len) => {
+            // Line 1: def draw_tree
+            steps.push({ line: 1, msg: `调用 draw_tree(${Math.floor(len)})`, action: 'call' });
+            
+            // Line 2: check base
+            steps.push({ line: 2, msg: `检查长度 ${Math.floor(len)} < 5 ?` });
+            
+            if (len < 5) {
+                steps.push({ line: 3, msg: `太短了，不画了，返回。`, action: 'return' });
+                return;
+            }
+            
+            // Line 5: Forward
+            steps.push({ 
+                line: 5, msg: `向前画 ${Math.floor(len)}`, action: 'forward', val: len 
+            });
+            
+            // Line 7: Left 30
+            steps.push({ 
+                line: 7, msg: `左转 30度，准备画左枝`, action: 'left', val: 30 
+            });
+            
+            // Line 8: Recurse Left
+            simDraw(len - 15);
+            
+            // Line 10: Right 60 (30 back + 30 right = relative 60 change? No, code says right(60))
+            // Code: left(30) -> recurse -> right(60) (which means net right 30 from original) -> recurse -> left(30) (restore)
+            steps.push({ 
+                line: 10, msg: `右转 60度 (转向右侧)，准备画右枝`, action: 'right', val: 60 
+            });
+            
+            // Line 11: Recurse Right
+            simDraw(len - 15);
+            
+            // Line 13: Left 30 (Restore)
+            steps.push({ 
+                line: 13, msg: `左转 30度 (恢复方向)`, action: 'left', val: 30 
+            });
+            
+            // Line 14: Backward
+            steps.push({ 
+                line: 14, msg: `后退 ${Math.floor(len)} (回到分叉点)`, action: 'backward', val: len 
+            });
+        };
+        
+        simDraw(length);
+        return steps;
+    }
+
+    function renderTurtleMode(s) {
+        const ctx = state.turtleCtx;
+        if (!ctx) return;
+        
+        // We draw incrementally.
+        // s.action: forward, backward, left, right
+        
+        const toRad = (deg) => deg * Math.PI / 180;
+        let { x, y, angle } = state.turtleState;
+        
+        ctx.strokeStyle = '#3b82f6'; // Blue line
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+
+        if (s.action === 'forward') {
+            const dist = s.val;
+            const newX = x + dist * Math.cos(toRad(angle));
+            const newY = y + dist * Math.sin(toRad(angle));
+            
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(newX, newY);
+            ctx.stroke();
+            
+            state.turtleState.x = newX;
+            state.turtleState.y = newY;
+        } 
+        else if (s.action === 'backward') {
+            // Just move logic, maybe draw in different color to show return?
+            // Or just jump back. Real turtle moves back.
+            // Let's trace back in lighter color
+            const dist = s.val;
+            const newX = x - dist * Math.cos(toRad(angle));
+            const newY = y - dist * Math.sin(toRad(angle));
+            
+            // Optional: Draw erase/return path
+            // ctx.strokeStyle = '#e2e8f0'; 
+            // ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(newX, newY); ctx.stroke();
+
+            state.turtleState.x = newX;
+            state.turtleState.y = newY;
+        } 
+        else if (s.action === 'left') {
+            state.turtleState.angle -= s.val;
+        } 
+        else if (s.action === 'right') {
+            state.turtleState.angle += s.val;
+        }
+        
+        // Redraw Turtle Cursor
+        // Need to save canvas state? No, we draw on top. 
+        // But to animate turtle moving, we ideally clear and redraw everything or use a separate layer.
+        // For simplicity, we just draw lines. We can draw a small circle at current tip.
+        
+        // Visual trick: draw a white circle to clear previous cursor? 
+        // Hard without full redraw. 
+        // Let's just draw the line. 
+        // Maybe update a status text with coords.
+    }
+    
+    function drawTurtleCursor(ctx, st) {
+        // Just a helper to show start point
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath();
+        ctx.arc(st.x, st.y, 4, 0, 2*Math.PI);
+        ctx.fill();
+    }
+
+    // --- 通用逻辑 (Stack/Tree) ---
+    // ... [Previous generateSteps implementation for Fact/Sum/Fib] ...
+    function generateSteps(algo, mode, n) {
+        let steps = [];
+        let nodeCounter = 0; 
+
+        // 1. 普通递归
+        const simStandardGeneric = (val, depth, name, opSymbol) => {
+            const isFib = algo === 'fibonacci';
+            if(isFib) {
+                const fibSim = (v, d, pId) => {
+                    const uId = ++nodeCounter; 
+                    steps.push({ line: 1, msg: `调用 ${name}(${v})`, action: 'push', frame: {id:d, t:`${name}(${v})`, v:`n=${v}, a=?, b=?`}, tree: { action: 'create', id: uId, pId: pId, val: `${name}(${v})` } });
+                    steps.push({ line: 2, msg: `检查 ${v} <= 2 ?` });
+                    if(v <= 2) {
+                        steps.push({ line: 3, msg: `基准满足，返回 1`, action: 'return', target: d, res: 1, tree: { action: 'return', id: uId, res: 1 } });
+                        steps.push({ line: 3, msg: `销毁 ${name}(${v})`, action: 'pop', target: d });
+                        return 1;
+                    }
+                    steps.push({ line: 4, msg: `计算 a = ${name}(${v}-1)。等待左分支。`, action: 'pause', target: d, status: `Wait: Left`, vars: `n=${v}, a=?, b=?`, tree: { action: 'wait', id: uId } });
+                    let a = fibSim(v - 1, d + 1, uId); 
+                    steps.push({ line: 4, msg: `左分支返回 a = ${a}。`, action: 'resume', target: d, status: `Got a=${a}. Calc Right...`, vars: `n=${v}, a=${a}, b=?`, tree: { action: 'active', id: uId } });
+                    steps.push({ line: 5, msg: `计算 b = ${name}(${v}-2)。等待右分支。`, action: 'pause', target: d, status: `Wait: Right`, vars: `n=${v}, a=${a}, b=?`, tree: { action: 'wait', id: uId } });
+                    let b = fibSim(v - 2, d + 1, uId);
+                    steps.push({ line: 5, msg: `右分支返回 b = ${b}。`, action: 'resume', target: d, status: `Got b=${b}. Return.`, vars: `n=${v}, a=${a}, b=${b}`, tree: { action: 'active', id: uId } });
+                    let res = a + b;
+                    steps.push({ line: 6, msg: `返回 a + b = ${res}`, action: 'return', target: d, res: res, tree: { action: 'return', id: uId, res: res } });
+                    steps.push({ line: 6, msg: `销毁 ${name}(${v})`, action: 'pop', target: d });
+                    return res;
+                };
+                fibSim(val, 0, 0); 
+                return;
+            }
+            const genericSim = (v, d) => {
+                steps.push({ line: 1, msg: `调用 ${name}(${v})`, action: 'push', frame: {id:d, t:`${name}(${v})`, v:`n=${v}`} });
+                steps.push({ line: 2, msg: `检查 n == 1 ?` });
+                if(v === 1) {
+                    steps.push({ line: 3, msg: `基准返回 1`, action: 'return', target: d, res: 1 });
+                    steps.push({ line: 3, msg: `销毁 ${name}(${v})`, action: 'pop', target: d });
+                    return 1;
+                }
+                steps.push({ line: 4, msg: `暂停，计算子函数`, action: 'pause', target: d, status: `Wait child...` });
+                let sub = genericSim(v - 1, d + 1);
+                let res = (algo === 'factorial') ? v * sub : v + sub;
+                steps.push({ line: 5, msg: `子函数返回 ${sub}。计算 ${v} ${opSymbol} ${sub} = ${res}`, action: 'resume', target: d, res: res, status: `Calc: ${res}` }); 
+                steps.push({ line: 5, msg: `返回 ${res}`, action: 'return', target: d, res: res });
+                steps.push({ line: 5, msg: `出栈`, action: 'pop', target: d });
+                return res;
+            };
+            genericSim(val, 0);
+        };
+
+        // 2. 尾递归 (Tail Python) & 3. TCO
+        const simTailGeneric = (val, acc, depth, name) => { /* ... keep same logic ... */ 
+             // Simplified for brevity in this block, assume logic from previous version 
+             // Since Binary tree uses separate logic, we only need Fact/Sum/Fib here.
+             const isFib = algo === 'fibonacci';
+             const tailSim = (currN, a, b, d, pId) => {
+                const uId = ++nodeCounter;
+                let varsStr = isFib ? `n=${currN}, a=${a}, b=${b}` : `n=${currN}, acc=${a}`;
+                let treeData = isFib ? { action: 'create', id: uId, pId: pId, val: `fib(${currN})` } : null;
+                steps.push({ line: 1, msg: `调用 ${name}(...)`, action: 'push', frame: {id:d, t:name, v:varsStr}, tree: treeData });
+                steps.push({ line: 2, msg: `检查基准?` });
+                let isBase = isFib ? (currN <= 2) : (currN <= (algo==='sum'?0:1));
+                if(isBase) {
+                    let res = isFib ? b : a;
+                    steps.push({ line: 3, msg: `基准返回 ${res}`, action: 'return', target: d, res: res, tree: isFib ? { action: 'return', id: uId, res: res } : null });
+                    steps.push({ line: 3, msg: `销毁栈帧`, action: 'pop', target: d });
+                    return res;
+                }
+                let nextN = currN - 1;
+                let nextA, nextB;
+                if(isFib) {
+                    nextA = b; nextB = a + b;
+                    steps.push({ line: 7, msg: `尾调用...`, action: 'pause', target: d, status: `Tail call`, tree: { action: 'wait', id: uId } });
+                    let r = tailSim(nextN, nextA, nextB, d + 1, uId);
+                    steps.push({ line: 7, msg: `直接返回`, action: 'pop', target: d, tree: isFib ? { action: 'return', id: uId, res: r } : null });
+                    return r;
+                } else {
+                    nextA = (algo==='factorial') ? currN * a : currN + a;
+                    steps.push({ line: 7, msg: `尾调用...`, action: 'pause', target: d, status: `Tail call` });
+                    let r = tailSim(nextN, nextA, 0, d + 1, 0);
+                    steps.push({ line: 7, msg: `直接返回`, action: 'pop', target: d });
+                    return r;
+                }
+             };
+             if(isFib) tailSim(val, 1, 1, 0, 0);
+             else tailSim(val, (algo==='sum'?0:1), 0, 0, 0);
+        };
+
+        const simOptGeneric = () => { /* ... keep same logic ... */ 
+            let curr = { n: n };
+            if(algo === 'fibonacci') { curr.a = 1; curr.b = 1; }
+            else { curr.acc = (algo==='sum'?0:1); }
+            steps.push({ line: 1, msg: `初始化`, action: 'init_opt', vars: {...curr} });
+            while(true) {
+                steps.push({ line: 2, msg: `检查基准...` });
+                let isBase = (algo === 'fibonacci') ? (curr.n <= 2) : (curr.n <= (algo==='sum'?0:1));
+                if(isBase) {
+                    let res = (algo === 'fibonacci') ? curr.b : curr.acc;
+                    steps.push({ line: 3, msg: `完成，返回 ${res}`, action: 'finish_opt', res: res });
+                    break;
+                }
+                steps.push({ line: 7, msg: `TCO更新`, action: 'update_opt', vars: null });
+                curr.n = curr.n - 1;
+                if(algo === 'fibonacci') {
+                    let temp = curr.a; curr.a = curr.b; curr.b = temp + curr.b;
+                } else {
+                    curr.acc = (algo==='factorial') ? (curr.n + 1) * curr.acc : (curr.n + 1) + curr.acc;
+                }
+                steps.push({ line: 1, msg: `更新完毕`, action: 'update_opt', vars: {...curr} });
+            }
+        };
+
+        if (mode === 'standard') {
+            let name = algo==='factorial'?'fact':(algo==='sum'?'sum_n':'fib');
+            let sym = algo==='factorial'?'*':'+';
+            simStandardGeneric(n, 0, name, sym);
+        } else if (mode === 'tail-python') {
+            let name = algo==='factorial'?'fact_iter':(algo==='sum'?'sum_iter':'fib_iter');
+            simTailGeneric(n, 0, 0, name);
+        } else {
+            simOptGeneric();
+        }
+        return steps;
+    }
+
+    // --- 渲染 (Stack/Tree/Opt) ---
+    function renderTreeMode(s) {
+        if (!s.tree) return;
+        const t = s.tree;
+        
+        if (t.action === 'create') {
+            const nodeHtml = `
+                <div id="tree-branch-${t.id}" class="tree-node-wrapper">
+                    <div id="tree-node-${t.id}" class="tree-node active-node ${t.val.startsWith('L')?'':'leaf'}">
+                        ${t.val ? t.val.replace(/[a-z_()]*/g, '') : ''}
+                    </div>
+                    <div id="connector-${t.id}" class="tree-connector-down hidden"></div>
+                    <div id="tree-children-${t.id}" class="tree-children"></div>
+                </div>
+            `;
+            
+            if (t.pId === 0) {
+                const root = document.getElementById('treeRoot');
+                if(root) root.innerHTML = nodeHtml;
+            } else {
+                const pContainer = document.getElementById(`tree-children-${t.pId}`);
+                if (pContainer) {
+                    const pConn = document.getElementById(`connector-${t.pId}`);
+                    if(pConn) pConn.classList.remove('hidden');
+                    const temp = document.createElement('div');
+                    temp.innerHTML = nodeHtml;
+                    pContainer.appendChild(temp.firstElementChild);
+                }
+            }
+        } 
+        else if (t.action === 'wait') {
+            const el = document.getElementById(`tree-node-${t.id}`);
+            if(el) { el.classList.remove('active-node'); el.classList.add('waiting'); }
+        }
+        else if (t.action === 'active') {
+             const el = document.getElementById(`tree-node-${t.id}`);
+            if(el) { el.classList.remove('waiting'); el.classList.add('active-node'); }
+        }
+        else if (t.action === 'return') {
+            const el = document.getElementById(`tree-node-${t.id}`);
+            if(el) {
+                el.classList.remove('active-node', 'waiting');
+                el.classList.add('returned');
+                if(t.res) el.innerText = t.res; 
+            }
+        }
+    }
+
+    function renderStackMode(s) {
+        const container = document.getElementById('stackView');
+        if (s.action === 'push') {
+            const div = document.createElement('div');
+            div.className = 'stack-frame w-full bg-white rounded border-l-4 border-blue-500 shadow-sm p-2 relative text-xs';
+            div.id = `f-${s.frame.id}`;
+            div.innerHTML = `
+                <div class="flex justify-between font-bold text-gray-700">
+                    <span>${s.frame.t}</span> <span class="text-gray-300">#${s.frame.id}</span>
+                </div>
+                <div class="font-mono text-gray-500 mt-1 break-all var-display">${s.frame.v}</div>
+                <div class="text-blue-500 mt-1 italic status-text">Running...</div>
+            `;
+            container.appendChild(div);
+        }
+        else if (s.action === 'pause') {
+            const f = document.getElementById(`f-${s.target}`);
+            if(f) {
+                f.style.borderColor = '#f59e0b';
+                f.querySelector('.status-text').innerText = s.status || 'Wait';
+                f.querySelector('.status-text').className = 'text-amber-500 mt-1 italic status-text';
+                if(s.vars) f.querySelector('.var-display').innerText = s.vars;
+            }
+        }
+        else if (s.action === 'resume') {
+             const f = document.getElementById(`f-${s.target}`);
+             if(f) {
+                f.style.borderColor = '#3b82f6';
+                f.querySelector('.status-text').innerText = s.status || 'Active';
+                f.querySelector('.status-text').className = 'text-blue-500 mt-1 italic status-text';
+                if(s.vars) {
+                     f.querySelector('.var-display').innerText = s.vars;
+                     const v = f.querySelector('.var-display');
+                     v.classList.add('var-highlight');
+                     setTimeout(()=>v.classList.remove('var-highlight'),500);
+                }
+             }
+        }
+        else if (s.action === 'return') {
+            const f = document.getElementById(`f-${s.target}`);
+            if(f) {
+                f.classList.add('returning');
+                f.querySelector('.status-text').innerHTML = `Ret: <b>${s.res}</b>`;
+                f.querySelector('.status-text').className = 'text-green-600 mt-1 font-bold status-text';
+            }
+        }
+        else if (s.action === 'pop') {
+            const f = document.getElementById(`f-${s.target}`);
+            if(f) {
+                f.classList.add('popping');
+                setTimeout(() => f.remove(), 300);
+            }
+        }
+    }
+
+    function renderOptMode(s) {
+        const container = document.getElementById('stackView'); 
+        if(container.innerHTML.includes('Stack Frames')) container.innerHTML = ''; 
+
+        if (s.action === 'init_opt') {
+            container.innerHTML = `
+                <div id="opt-frame" class="w-full bg-white rounded-xl border-l-8 border-purple-500 shadow-lg p-5 flex flex-col items-center">
+                    <div class="text-gray-500 font-bold text-sm mb-4 uppercase tracking-widest">Single Stack Frame</div>
+                    <div id="opt-vars" class="flex gap-4 w-full justify-center flex-wrap"></div>
+                </div>
+            `;
+            renderOptVars(s.vars);
+        }
+        else if (s.action === 'update_opt' && s.vars) renderOptVars(s.vars);
+        else if (s.action === 'finish_opt') {
+            const f = document.getElementById('opt-frame');
+            if(f) {
+                f.style.borderColor = '#22c55e';
+                f.style.backgroundColor = '#f0fdf4';
+                f.innerHTML += `<div class="mt-4 font-bold text-green-600 text-lg">Result: ${s.res}</div>`;
+            }
+        }
+    }
+
+    function renderOptVars(vars) {
+        const container = document.getElementById('opt-vars');
+        if(!container) return;
+        container.innerHTML = '';
+        Object.entries(vars).forEach(([key, val]) => {
+            const card = document.createElement('div');
+            card.className = 'opt-var-card flex flex-col items-center bg-gray-50 p-3 rounded border border-gray-200 min-w-[60px] flash-update';
+            card.innerHTML = `<span class="text-xs font-bold text-gray-400 uppercase">${key}</span><span class="text-xl font-mono font-bold text-slate-700">${val}</span>`;
+            container.appendChild(card);
+        });
+    }
+
+    function updateStats() {
+        // Only update if stack view is visible
+        if(state.algo === 'binary_tree') return; 
+        
+        const count = document.querySelectorAll('.stack-frame:not(.popping)').length;
+        const el = document.getElementById('stack-stats');
+        if(state.mode === 'tail-opt') el.innerText = 'Depth: 1';
+        else {
+            el.innerText = `Depth: ${count}`;
+            el.className = count > 6 ? 'text-[10px] bg-red-100 text-red-600 px-2 py-1 rounded border border-red-200' : 'text-[10px] bg-white px-2 py-1 rounded shadow-sm text-slate-400 font-mono border border-gray-100';
+        }
+    }
+
+    function softReset() {
+        stopAutoPlay();
+        state.running = false;
+        state.steps = [];
+        state.stepIndex = 0;
+        document.getElementById('btnStart').classList.remove('hidden');
+        document.getElementById('btnNext').classList.add('hidden');
+        document.getElementById('btnAuto').classList.add('hidden');
+        document.getElementById('btnReset').classList.add('hidden');
+        document.getElementById('numInput').disabled = false;
+        document.getElementById('algoSelect').disabled = false;
+        document.getElementById('stackView').innerHTML = '<div class="text-slate-300 text-sm mt-4 italic select-none">Stack Frames...</div>';
+        document.getElementById('treeRoot').innerHTML = '<div class="text-slate-300 text-sm mt-10 italic select-none">树形结构将在此生长...</div>';
+        
+        const canvas = document.getElementById('turtleCanvas');
+        if(canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        document.querySelectorAll('.code-line').forEach(el => el.classList.remove('active'));
+        updateUIInfo();
+        updateStats();
+        updateLayout();
+        document.getElementById('step-counter').innerText = 'Steps: 0';
+    }
+
+    function reset() { softReset(); }
+
+</script>
+</body>
+</html>
