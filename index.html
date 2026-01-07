@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>玩转Python工具集</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 {
+            text-align: center;
+            color: white;
+            font-size: 2.5rem;
+            margin-bottom: 40px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+        }
+        .tool-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+            transition: transform 0.3s, box-shadow 0.3s;
+            text-decoration: none;
+            color: inherit;
+        }
+        .tool-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+        }
+        .tool-card h2 {
+            color: #333;
+            font-size: 1.4rem;
+            margin-bottom: 12px;
+        }
+        .tool-card p {
+            color: #666;
+            line-height: 1.6;
+        }
+        .tool-icon {
+            font-size: 2.5rem;
+            margin-bottom: 16px;
+        }
+        footer {
+            text-align: center;
+            color: rgba(255,255,255,0.8);
+            margin-top: 60px;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐍 玩转Python工具集</h1>
+        <div class="tools-grid">
+            <a href="./tools/递归-完美二叉树.html" class="tool-card">
+                <div class="tool-icon">🌳</div>
+                <h2>递归-完美二叉树</h2>
+                <p>可视化理解递归与完美二叉树的结构和原理</p>
+            </a>
+            <a href="./tools/学期总结.html" class="tool-card">
+                <div class="tool-icon">📚</div>
+                <h2>学期总结</h2>
+                <p>Python学习学期总结与知识回顾</p>
+            </a>
+            <!-- 后续可以继续添加更多工具卡片 -->
+        </div>
+        <footer>
+            <p>© 2026 玩转Python工具集 | 持续更新中...</p>
+        </footer>
+    </div>
+</body>
+</html>
